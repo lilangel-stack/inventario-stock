@@ -1,0 +1,12 @@
+{
+  "name": "mi-negocio-gestion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplicación para gestionar compras, ventas, inventario y gastos con cuentas sincronizadas.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

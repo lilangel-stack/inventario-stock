@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f6f8">
+    <title>Mi negocio | Gestión</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <main class="auth-screen" id="auth-screen" hidden>
+      <section class="auth-card" aria-labelledby="auth-title">
+        <a class="brand auth-brand" href="/" aria-label="Mi negocio">
+          <span class="brand-mark">M</span>
+          <span>mi<span class="brand-light">negocio</span><small>GESTIÓN COMERCIAL</small></span>
+        </a>
+        <p class="auth-eyebrow">TU NEGOCIO, SIEMPRE CONTIGO</p>
+        <h1 id="auth-title">Bienvenido de nuevo</h1>
+        <p class="auth-description" id="auth-description">Inicia sesión para acceder a tus datos desde cualquier dispositivo.</p>
+        <form id="auth-form">
+          <div id="register-fields" hidden>
+            <label>Nombre<input id="auth-first-name" name="firstName" type="text" autocomplete="given-name" maxlength="80" placeholder="Tu nombre" required></label>
+            <label>Apellido<input id="auth-last-name" name="lastName" type="text" autocomplete="family-name" maxlength="80" placeholder="Tu apellido" required></label>
+            <label>Nombre de la tienda<input id="auth-store-name" name="storeName" type="text" autocomplete="organization" maxlength="80" placeholder="Ej. Tienda La Esquina" required></label>
+          </div>
+          <label>Clave especial de acceso
+            <span class="password-control">
+              <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="Tu clave privada para la tienda" required>
+              <button class="password-toggle" type="button" data-password-target="auth-password" aria-label="Mostrar clave de acceso" aria-pressed="false">Mostrar</button>
+            </span>
+          </label>
+          <label id="confirm-password-field" hidden>Confirmar clave especial
+            <span class="password-control">
+              <input id="auth-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" placeholder="Confirma tu clave especial">
+              <button class="password-toggle" type="button" data-password-target="auth-confirm-password" aria-label="Mostrar confirmación de clave especial" aria-pressed="false">Mostrar</button>
+            </span>
+          </label>
+          <p class="auth-error" id="auth-error" role="alert" hidden></p>
+          <button class="button button-primary auth-submit" id="auth-submit" type="submit">Iniciar sesión</button>
+        </form>
+        <p class="auth-switch-copy" id="auth-switch-copy">¿Tu tienda aún no tiene clave? <button class="auth-switch" id="auth-switch" type="button">Crear tienda</button></p>
+        <p class="auth-privacy" id="auth-privacy">La clave especial es privada: compártela solo con quienes deban acceder a las ventas de tu tienda.</p>
+      </section>
+    </main>
+    <div class="app-shell" id="app-shell" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="#inicio" aria-label="Ir al inicio">
+          <span class="brand-mark" id="store-initial">M</span>
+          <span><span class="store-name" id="account-store-name">Mi negocio</span><small>GESTIÓN COMERCIAL</small></span>
+        </a>
+        <span class="nav-caption">MENÚ PRINCIPAL</span>
+        <nav class="nav-list" aria-label="Menú principal">
+          <button class="nav-link active" data-view="inicio"><span class="nav-icon">⌂</span>Resumen</button>
+          <button class="nav-link" data-view="compras"><span class="nav-icon">＋</span>Compras</button>
+          <button class="nav-link" data-view="ventas"><span class="nav-icon">↗</span>Nueva venta</button>
+          <button class="nav-link" data-view="inventario"><span class="nav-icon">▤</span>Inventario</button>
+          <button class="nav-link" data-view="gastos"><span class="nav-icon">↙</span>Gastos y pagos</button>
+          <button class="nav-link" data-view="facturas"><span class="nav-icon">▧</span>Facturas</button>
+        </nav>
+        <div class="sidebar-note">
+          <span class="online-dot"></span>
+          <span>Datos sincronizados en tu tienda<small>Accede con la clave desde tus dispositivos</small></span>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="today-label"></p>
+            <h1 id="page-title">Resumen del negocio</h1>
+          </div>
+          <div class="top-actions">
+            <span class="account-owner" id="account-owner"></span>
+            <button class="logout-button" id="logout-button" type="button">Cerrar sesión</button>
+            <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Cambiar a modo oscuro" title="Cambiar a modo oscuro">
+              <span class="theme-icon" id="theme-icon" aria-hidden="true">☾</span>
+              <span id="theme-label">Modo oscuro</span>
+            </button>
+            <button class="button button-primary top-action" data-go="ventas"><span>＋</span> Registrar venta</button>
+          </div>
+        </header>
+
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+        <section class="view active" id="view-inicio" aria-label="Resumen">
+          <div class="welcome-row">
+            <div><h2>Así va tu negocio</h2><p>Un vistazo rápido a tus ventas, inventario y ganancias.</p></div>
+            <span class="today-chip" id="today-chip"></span>
+          </div>
+          <div class="metric-grid">
+            <article class="metric-card"><span class="metric-label">VENTAS REGISTRADAS</span><span class="metric-value" id="metric-sales">$0</span><span class="metric-foot" id="metric-sales-count">0 ventas</span><span class="metric-icon icon-blue">↗</span></article>
+            <article class="metric-card"><span class="metric-label">INVERSIÓN EN COMPRAS</span><span class="metric-value" id="metric-investment">$0</span><span class="metric-foot">Total comprado a proveedores</span><span class="metric-icon icon-purple">◈</span></article>
+            <article class="metric-card"><span class="metric-label">UTILIDAD NETA</span><span class="metric-value" id="metric-profit">$0</span><span class="metric-foot">Ventas − costo − gastos</span><span class="metric-icon icon-green">⌁</span></article>
+            <article class="metric-card"><span class="metric-label">VALOR DEL INVENTARIO</span><span class="metric-value" id="metric-inventory">$0</span><span class="metric-foot" id="metric-stock-count">0 unidades en stock</span><span class="metric-icon icon-orange">▤</span></article>
+          </div>
+          <div class="dashboard-charts">
+            <article class="panel chart-panel">
+              <div class="panel-heading"><div><h3>Ventas, gastos y diferencia</h3><p>Comparación acumulada de los registros de tu tienda.</p></div></div>
+              <div class="chart-content" id="financial-chart" role="img" aria-label="Gráfico de ventas, gastos y diferencia"></div>
+            </article>
+            <article class="panel chart-panel">
+              <div class="panel-heading"><div><h3>Productos más vendidos</h3><p>Unidades vendidas por producto.</p></div></div>
+              <div class="chart-content" id="top-products-chart" role="img" aria-label="Gráfico de los productos más vendidos"></div>
+            </article>
+          </div>
+          <div class="dashboard-grid">
+            <article class="panel">
+              <div class="panel-heading"><div><h3>Actividad reciente</h3><p>Las últimas compras y ventas registradas.</p></div><button class="text-button" data-go="facturas">Ver facturas →</button></div>
+              <div class="table-wrap"><table><thead><tr><th>TIPO</th><th>DETALLE</th><th>FECHA</th><th class="align-right">VALOR</th></tr></thead><tbody id="recent-activity"></tbody></table></div>
+            </article>
+            <article class="panel insight-panel">
+              <div class="panel-heading"><div><h3>Lo más importante</h3><p>Indicadores de tus productos.</p></div><span class="sparkle">✳</span></div>
+              <div class="insight-item"><span class="insight-icon best-icon">★</span><span><small>PRODUCTO MÁS VENDIDO</small><strong id="top-product">Aún no hay ventas</strong></span><b id="top-product-quantity">—</b></div>
+              <div class="insight-item"><span class="insight-icon stock-icon">!</span><span><small>STOCK BAJO</small><strong id="low-stock-count">Sin alertas</strong></span><button class="text-button" data-go="inventario">Revisar</button></div>
+              <div class="insight-total"><span>Gastos y pagos registrados</span><strong id="metric-expenses">$0</strong></div>
+              <div class="insight-total"><span>Por cobrar en cuotas</span><strong id="metric-receivable">$0</strong></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="view-compras" aria-label="Registrar compra">
+          <div class="section-intro"><h2>Registrar compra</h2><p>Ingresa los productos recibidos del proveedor para actualizar automáticamente tu inventario.</p></div>
+          <form id="purchase-form" class="panel form-panel">
+            <div class="form-section-title"><span class="step-number">1</span><div><h3>Datos de la compra</h3><p>La compra quedará guardada en el historial de inversión.</p></div></div>
+            <div class="form-grid">
+              <label>Nombre del producto<input name="product" required maxlength="80" placeholder="Ej. Camiseta básica"></label>
+              <label>Proveedor<input name="supplier" maxlength="80" placeholder="Nombre del proveedor"></label>
+              <label>Cantidad recibida<input name="quantity" type="number" min="1" step="1" required placeholder="0"></label>
+              <label>Costo por unidad<input name="unitCost" type="number" min="0.01" step="0.01" required placeholder="0"></label>
+              <label class="field-wide">Fecha de compra<input name="date" type="date" required></label>
+            </div>
+            <div class="form-summary"><span>Inversión de esta compra</span><strong id="purchase-total">$0</strong></div>
+            <div class="form-actions"><button class="button button-primary" type="submit">Guardar compra</button></div>
+          </form>
+        </section>
+
+        <section class="view" id="view-ventas" aria-label="Registrar venta">
+          <div class="section-intro"><h2>Nueva venta</h2><p>Calcula el precio, el pago inicial y las cuotas antes de guardar la venta.</p></div>
+          <form id="sale-form" class="panel form-panel">
+            <div class="form-section-title"><span class="step-number">1</span><div><h3>Producto y precio</h3><p>El precio de venta se calcula sobre el costo promedio del inventario.</p></div></div>
+            <div class="form-grid">
+              <label>Producto<select name="productId" id="sale-product" required><option value="">Selecciona un producto</option></select></label>
+              <label>Cantidad<input name="quantity" type="number" min="1" step="1" value="1" required></label>
+              <label>Utilidad sobre el costo (%)<input name="margin" type="number" min="0" step="0.01" value="30" required></label>
+              <label>Vendedor<input name="seller" maxlength="80" placeholder="Nombre del vendedor"></label>
+              <label>Comisión del vendedor<input name="commission" type="number" min="0" step="0.01" value="0"></label>
+              <label>Pago al repartidor<input name="delivery" type="number" min="0" step="0.01" value="0"></label>
+              <label>Número de cuotas<input name="installments" type="number" min="1" max="120" step="1" value="4" required></label>
+              <label>Cliente (opcional)<input name="customer" maxlength="100" placeholder="Nombre del cliente"></label>
+            </div>
+            <div class="calculation-box">
+              <div><span>Costo de la venta</span><strong id="sale-cost">$0</strong></div>
+              <div><span>Precio de venta</span><strong id="sale-total">$0</strong></div>
+              <div><span>Cuota inicial (20%)</span><strong id="sale-down-payment">$0</strong></div>
+              <div><span>Cuotas restantes</span><strong id="sale-installment">$0</strong><small id="sale-installment-count">4 cuotas</small></div>
+              <p id="sale-stock-hint">Selecciona un producto para consultar el stock.</p>
+            </div>
+            <div class="form-actions"><button class="button button-primary" type="submit">Guardar venta y generar factura</button></div>
+          </form>
+        </section>
+
+        <section class="view" id="view-inventario" aria-label="Inventario">
+          <div class="section-intro section-heading-row"><div><h2>Inventario</h2><p>Existencias y costo promedio de tus productos.</p></div><button class="button button-primary" data-go="compras">＋ Registrar compra</button></div>
+          <article class="panel"><div class="table-wrap"><table><thead><tr><th>PRODUCTO</th><th>PROVEEDOR</th><th class="align-right">COSTO PROMEDIO</th><th class="align-right">UNIDADES</th><th class="align-right">VALOR EN STOCK</th></tr></thead><tbody id="inventory-table"></tbody></table></div></article>
+        </section>
+
+        <section class="view" id="view-gastos" aria-label="Gastos y pagos">
+          <div class="section-intro"><h2>Gastos y pagos</h2><p>Registra nómina, gastos operativos y otros pagos de tu negocio.</p></div>
+          <form id="expense-form" class="panel form-panel compact-form">
+            <div class="form-section-title"><span class="step-number">＋</span><div><h3>Agregar un gasto o pago</h3><p>Las comisiones y repartos de las ventas se incluyen automáticamente.</p></div></div>
+            <div class="form-grid">
+              <label>Concepto<select name="category" required><option value="Nómina">Pago de nómina</option><option value="Gasto operativo">Gasto operativo</option><option value="Arriendo">Arriendo</option><option value="Servicios">Servicios</option><option value="Otro">Otro pago</option></select></label>
+              <label>Descripción<input name="description" required maxlength="120" placeholder="Ej. Nómina primera quincena"></label>
+              <label>Valor<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0"></label>
+              <label>Fecha<input name="date" type="date" required></label>
+            </div>
+            <div class="form-actions"><button class="button button-primary" type="submit">Guardar gasto</button></div>
+          </form>
+          <article class="panel expense-history"><div class="panel-heading"><div><h3>Historial de gastos</h3><p>Incluye pagos y gastos operativos guardados.</p></div></div><div class="table-wrap"><table><thead><tr><th>CONCEPTO</th><th>DESCRIPCIÓN</th><th>FECHA</th><th class="align-right">VALOR</th></tr></thead><tbody id="expenses-table"></tbody></table></div></article>
+        </section>
+
+        <section class="view" id="view-facturas" aria-label="Facturas">
+          <div class="section-intro"><h2>Facturas de venta</h2><p>Consulta e imprime las facturas generadas al registrar cada venta.</p></div>
+          <article class="panel"><div class="table-wrap"><table><thead><tr><th>FACTURA</th><th>CLIENTE / VENDEDOR</th><th>FECHA</th><th class="align-right">TOTAL</th><th>ACCIONES</th></tr></thead><tbody id="invoices-table"></tbody></table></div></article>
+        </section>
+        <footer class="footer-note">Los datos se sincronizan con tu tienda. Para acceder desde otros dispositivos, mantén el servidor conectado y usa la misma clave especial.</footer>
+      </main>
+    </div>
+    <dialog class="invoice-dialog" id="invoice-dialog" aria-labelledby="invoice-dialog-title">
+      <div class="invoice-dialog-header">
+        <h2 id="invoice-dialog-title">Vista previa de factura</h2>
+        <button class="invoice-close" id="invoice-close" type="button" aria-label="Cerrar vista previa">×</button>
+      </div>
+      <div class="invoice-preview" id="invoice-preview"></div>
+      <div class="invoice-dialog-actions">
+        <button class="button invoice-cancel" id="invoice-cancel" type="button">Cerrar</button>
+        <button class="button button-primary" id="invoice-print" type="button">Imprimir factura</button>
+      </div>
+    </dialog>
+  </body>
+</html>
