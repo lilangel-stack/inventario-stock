@@ -10,6 +10,8 @@ Se requiere Node.js 22.5 o posterior. Desde la carpeta del proyecto, ejecuta:
 npm start
 ```
 
+En Windows, también puedes hacer doble clic en **Iniciar Mi Negocio.bat**.
+
 Abre la dirección que aparece en la terminal (por defecto, http://localhost:3000) y selecciona **Crear tienda**.
 
 Si el puerto está ocupado, el servidor probará automáticamente el siguiente y mostrará la dirección correcta en la terminal.
