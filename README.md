@@ -26,10 +26,18 @@ El encabezado muestra el nombre de la tienda y un saludo con el nombre del propi
 
 Cada clave da acceso únicamente a los datos de su tienda. Compártela solo con personas autorizadas. Las tiendas creadas anteriormente con correo siguen usando como clave la contraseña de su cuenta anterior.
 
+## Publicar en Internet
+
+Netlify puede publicar los archivos estáticos, pero no mantener este servidor Express encendido ni guardar de forma persistente el archivo SQLite. Por eso, subir solo el sitio a Netlify no activa el registro, el inicio de sesión ni la API.
+
+Para publicar la aplicación completa, conecta este repositorio a Render y crea el servicio usando el archivo `render.yaml` incluido. Render iniciará Express y servirá tanto la interfaz como la API desde el mismo dominio, con SQLite en un disco persistente. Después de desplegar, abre la URL del servicio de Render, no la URL estática de Netlify. El disco persistente requiere un plan que lo admita.
+
+El primer despliegue crea una base SQLite nueva en el disco del servicio. La base de datos que ya está en `data/mi-negocio.sqlite` en tu computador no se copia automáticamente a la nube; respáldala y transfiérela al disco persistente antes de usar el servicio si necesitas conservar esos datos.
+
 ## Acceder desde otros dispositivos
 
 - **En la misma red local:** inicia el servidor en el equipo donde quieras guardar la base de datos y abre desde el otro dispositivo `http://<IP-local-del-equipo>:<puerto-mostrado-en-la-terminal>`. El equipo debe permanecer encendido y su firewall debe permitir conexiones al puerto.
-- **Desde fuera de la red:** despliega esta aplicación en un servidor accesible por Internet con HTTPS y almacenamiento persistente. Configura ese almacenamiento para el archivo de SQLite. No publiques la aplicación en Internet sin HTTPS.
+- **Desde fuera de la red:** despliega esta aplicación en un servidor accesible por Internet con HTTPS y almacenamiento persistente. El archivo `render.yaml` configura un disco en `/var/data`. No publiques la aplicación en Internet sin HTTPS.
 - **Base de datos:** se crea en `data/mi-negocio.sqlite`. Puedes cambiar su ubicación con la variable de entorno `DATABASE_PATH` y el puerto con `PORT`.
 - **Almacenamiento:** el tema claro/oscuro se guarda en el navegador. Los productos, compras, ventas y gastos se guardan en SQLite y se comparten con todas las personas que accedan mediante la clave de la tienda.
 - **Migración:** los registros antiguos de IndexedDB en este navegador se migran a la tienda cuando se crea por primera vez o cuando una tienda existente sin registros se abre desde este navegador.

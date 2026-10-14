@@ -1,9 +1,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
-const http = require("node:http");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { DatabaseSync } = require("node:sqlite");
+const express = require("express");
 
 const root = __dirname;
 let port = Number(process.env.PORT) || 3000;
@@ -12,12 +12,8 @@ const sessionDuration = 30 * 24 * 60 * 60 * 1000;
 const passwordLength = 64;
 const recordStores = ["products", "purchases", "sales", "expenses"];
 const scrypt = promisify(crypto.scrypt);
-const staticFiles = new Map([
-  ["/", ["index.html", "text/html; charset=utf-8"]],
-  ["/index.html", ["index.html", "text/html; charset=utf-8"]],
-  ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
-  ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
-]);
+const app = express();
+app.disable("x-powered-by");
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -116,15 +112,13 @@ const saveUserData = database.prepare(
 const rateLimits = new Map();
 
 function sendJson(response, status, body, headers = {}) {
-  response.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
+  response.status(status).set({
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
     ...headers,
-  });
-  response.end(JSON.stringify(body));
+  }).json(body);
 }
 
 function hashToken(token) {
@@ -180,22 +174,10 @@ function requireSameOrigin(request) {
 }
 
 async function readJson(request) {
-  if (!request.headers["content-type"]?.toLowerCase().startsWith("application/json")) {
+  if (!request.is("application/json")) {
     throw new HttpError(415, "El tipo de contenido debe ser JSON.");
   }
-  let body = "";
-  for await (const chunk of request) {
-    body += chunk.toString("utf8");
-    if (Buffer.byteLength(body) > 2 * 1024 * 1024) {
-      throw new HttpError(413, "La solicitud es demasiado grande.");
-    }
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    throw new HttpError(400, "El contenido JSON no es válido.");
-  }
+  const parsed = request.body;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new HttpError(400, "El contenido JSON debe ser un objeto.");
   }
@@ -451,64 +433,72 @@ async function handleApi(request, response, pathname) {
 }
 
 async function handleRequest(request, response) {
-  let pathname;
-  try {
-    pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
-  } catch {
-    throw new HttpError(400, "La dirección solicitada no es válida.");
-  }
+  return handleApi(request, response, new URL(request.originalUrl, "http://localhost").pathname);
+}
 
-  if (pathname.startsWith("/api/")) {
-    return handleApi(request, response, pathname);
-  }
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    throw new HttpError(405, "Método no permitido.");
-  }
-  const file = staticFiles.get(pathname);
-  if (!file) throw new HttpError(404, "No se encontró esta página.");
-
-  const filePath = path.join(root, file[0]);
-  const content = await fs.promises.readFile(filePath);
-  response.writeHead(200, {
-    "Content-Type": file[1],
+app.use((request, response, next) => {
+  response.set({
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
   });
-  response.end(request.method === "HEAD" ? undefined : content);
+  next();
+});
+
+app.use(express.json({ limit: "2mb" }));
+app.get(["/", "/index.html"], (request, response) => {
+  response.sendFile(path.join(root, "index.html"));
+});
+app.get("/styles.css", (request, response) => {
+  response.sendFile(path.join(root, "styles.css"));
+});
+app.get("/app.js", (request, response) => {
+  response.type("text/javascript").sendFile(path.join(root, "app.js"));
+});
+app.use("/api", (request, response, next) => {
+  Promise.resolve(handleRequest(request, response)).catch(next);
+});
+app.use("/api", (request, response) => {
+  sendJson(response, 404, { error: "No se encontró este recurso." });
+});
+app.use((request, response, next) => {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return next(new HttpError(405, "Método no permitido."));
+  }
+  next(new HttpError(404, "No se encontró esta página."));
+});
+app.use((error, request, response, next) => {
+  if (response.headersSent) return next(error);
+  if (error instanceof HttpError) {
+    return sendJson(response, error.status, { error: error.message });
+  }
+  if (error.type === "entity.too.large") {
+    return sendJson(response, 413, { error: "La solicitud es demasiado grande." });
+  }
+  if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
+    return sendJson(response, 400, { error: "El contenido JSON no es válido." });
+  }
+  console.error("Error procesando una solicitud:", error);
+  return sendJson(response, 500, { error: "Ocurrió un error interno. Inténtalo de nuevo." });
+});
+
+function startServer() {
+  const server = app.listen(port, "0.0.0.0", () => {
+    console.log(`Mi negocio disponible en http://localhost:${port}`);
+  });
+  server.on("error", (error) => {
+    if (error.code === "EADDRINUSE" && port < 65535) {
+      const occupiedPort = port;
+      port += 1;
+      console.warn(`El puerto ${occupiedPort} ya está en uso. Probando el puerto ${port}...`);
+      startServer();
+      return;
+    }
+
+    console.error("No se pudo iniciar el servidor:", error);
+    process.exitCode = 1;
+  });
 }
 
-const server = http.createServer((request, response) => {
-  Promise.resolve(handleRequest(request, response)).catch((error) => {
-    if (response.headersSent) {
-      response.destroy(error);
-      return;
-    }
-    if (error instanceof HttpError) {
-      sendJson(response, error.status, { error: error.message });
-      return;
-    }
-    console.error("Error procesando una solicitud:", error);
-    sendJson(response, 500, { error: "Ocurrió un error interno. Inténtalo de nuevo." });
-  });
-});
-
-server.on("listening", () => {
-  console.log(`Mi negocio disponible en http://localhost:${port}`);
-});
-
-server.on("error", (error) => {
-  if (error.code === "EADDRINUSE" && port < 65535) {
-    const occupiedPort = port;
-    port += 1;
-    console.warn(`El puerto ${occupiedPort} ya está en uso. Probando el puerto ${port}...`);
-    server.listen(port, "0.0.0.0");
-    return;
-  }
-
-  console.error("No se pudo iniciar el servidor:", error);
-  process.exitCode = 1;
-});
-
-server.listen(port, "0.0.0.0");
+startServer();
