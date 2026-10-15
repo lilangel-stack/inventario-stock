@@ -528,15 +528,8 @@ app.use((request, response, next) => {
 });
 
 app.use(express.json({ limit: "2mb" }));
-app.get(["/", "/index.html"], (request, response) => {
-  response.sendFile(path.join(root, "index.html"));
-});
-app.get("/styles.css", (request, response) => {
-  response.sendFile(path.join(root, "styles.css"));
-});
-app.get("/app.js", (request, response) => {
-  response.type("text/javascript").sendFile(path.join(root, "app.js"));
-});
+app.use("/fotos", express.static(path.join(root, "fotos"), { fallthrough: true }));
+app.use(express.static(path.join(root, "dist"), { index: false }));
 app.use("/api", (request, response, next) => {
   Promise.resolve(handleRequest(request, response)).catch(next);
 });
@@ -544,6 +537,9 @@ app.use("/api", (request, response) => {
   sendJson(response, 404, { error: "No se encontró este recurso." });
 });
 app.use((request, response, next) => {
+  if ((request.method === "GET" || request.method === "HEAD") && request.accepts("html")) {
+    return response.sendFile(path.join(root, "dist", "index.html"));
+  }
   if (request.method !== "GET" && request.method !== "HEAD") {
     return next(new HttpError(405, "Método no permitido."));
   }

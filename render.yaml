@@ -3,8 +3,8 @@ services:
     name: mi-negocio
     runtime: node
     plan: free
-    buildCommand: npm ci
-    startCommand: npm start
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:api
     healthCheckPath: /api/session
     envVars:
       - key: NODE_ENV

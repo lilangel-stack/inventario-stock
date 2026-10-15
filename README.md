@@ -1,16 +1,19 @@
 # Mi negocio
 
-Aplicación web para registrar compras y ventas, controlar inventario, generar facturas y consultar gastos, utilidades y gráficos acumulados de ventas, gastos y productos más vendidos. La tienda se comparte de forma segura mediante una clave especial que permite consultar los mismos datos desde diferentes dispositivos.
+Aplicación web en React para registrar compras y ventas, controlar inventario, generar facturas y consultar gastos, utilidades y gráficos acumulados de ventas, gastos y productos más vendidos. La interfaz usa Tailwind CSS y animaciones GSAP. La tienda se comparte de forma segura mediante una clave especial que permite consultar los mismos datos desde diferentes dispositivos.
 
 ## Requisitos e inicio
 
-Se requiere Node.js 22.5 o posterior. Desde la carpeta del proyecto, ejecuta:
+Se requiere Node.js 22.5 o posterior. Instala las dependencias y, desde la carpeta del proyecto, ejecuta:
 
 ```bash
+npm install
 npm start
 ```
 
-En Windows, también puedes hacer doble clic en **Iniciar Mi Negocio.bat**.
+El inicio compila la interfaz React con Vite y luego levanta el servidor. En Windows, también puedes hacer doble clic en **Iniciar Mi Negocio.bat**.
+
+Para trabajar en desarrollo, abre dos terminales: ejecuta `npm run start:api` en una y `npm run dev` en la otra; Vite enviará las solicitudes `/api` al servidor local.
 
 Abre la dirección que aparece en la terminal (por defecto, http://localhost:3000) y selecciona **Crear tienda**.
 
@@ -42,7 +45,7 @@ Netlify puede publicar los archivos estáticos, pero no mantener este servidor E
 3. Sube los cambios de este proyecto a GitHub. En Render, conecta el repositorio como Blueprint. El archivo `render.yaml` configura el servidor web en el plan gratuito y solicita `DATABASE_URL`; no necesita un disco persistente. Pega la misma URL de conexión y conserva `NODE_ENV=production`.
 4. Después de desplegar, abre la URL del servicio de Render; no la URL estática de Netlify.
 
-La app sigue usando SQLite localmente si no se define `DATABASE_URL`. La migración copia tiendas y registros, pero no sesiones activas; inicia sesión de nuevo después del despliegue.
+La app sigue usando SQLite localmente si no se define `DATABASE_URL`. El proceso de compilación genera los archivos de React, y Express los sirve junto con la API. La migración copia tiendas y registros, pero no sesiones activas; inicia sesión de nuevo después del despliegue.
 
 ## Acceder desde otros dispositivos
 
