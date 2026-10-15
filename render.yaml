@@ -2,16 +2,12 @@ services:
   - type: web
     name: mi-negocio
     runtime: node
-    plan: starter
-    buildCommand: npm install
+    plan: free
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/session
-    disk:
-      name: mi-negocio-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_PATH
-        value: /var/data/mi-negocio.sqlite
+      - key: DATABASE_URL
+        sync: false

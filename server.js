@@ -4,16 +4,22 @@ const path = require("node:path");
 const { promisify } = require("node:util");
 const { DatabaseSync } = require("node:sqlite");
 const express = require("express");
+const { Pool } = require("pg");
 
 const root = __dirname;
 let port = Number(process.env.PORT) || 3000;
 const databasePath = process.env.DATABASE_PATH || path.join(root, "data", "mi-negocio.sqlite");
+const postgresUrl = process.env.DATABASE_URL;
 const sessionDuration = 30 * 24 * 60 * 60 * 1000;
 const passwordLength = 64;
 const recordStores = ["products", "purchases", "sales", "expenses"];
 const scrypt = promisify(crypto.scrypt);
 const app = express();
 app.disable("x-powered-by");
+const database = postgresUrl ? new Pool({
+  connectionString: postgresUrl,
+  max: 5,
+}) : process.env.NODE_ENV === "production" ? null : new DatabaseSync(databasePath);
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -22,93 +28,144 @@ class HttpError extends Error {
   }
 }
 
-fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-const database = new DatabaseSync(databasePath);
-database.exec(`
-  PRAGMA foreign_keys = ON;
-  PRAGMA journal_mode = WAL;
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    email TEXT NOT NULL UNIQUE,
-    password_salt TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
-    token_hash TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS sessions_expiration ON sessions(expires_at);
-  CREATE TABLE IF NOT EXISTS app_data (
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    store_name TEXT NOT NULL,
-    record_id TEXT NOT NULL,
-    record_json TEXT NOT NULL,
-    PRIMARY KEY (user_id, store_name, record_id)
-  );
-  CREATE TABLE IF NOT EXISTS workspace (
-    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-  );
-`);
+function toPostgresSql(sql) {
+  let parameter = 0;
+  return sql.replace(/\?/g, () => `$${++parameter}`);
+}
 
-const existingUserColumns = new Set(
-  database.prepare("PRAGMA table_info(users)").all().map((column) => column.name),
-);
-for (const [column, definition] of [
-  ["first_name", "TEXT NOT NULL DEFAULT ''"],
-  ["last_name", "TEXT NOT NULL DEFAULT ''"],
-  ["store_name", "TEXT NOT NULL DEFAULT 'Mi negocio'"],
-  ["access_key_hash", "TEXT"],
-]) {
-  if (!existingUserColumns.has(column)) {
-    database.exec(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+function get(sql, values = [], connection = database) {
+  if (postgresUrl) return connection.query(toPostgresSql(sql), values).then(({ rows }) => rows[0]);
+  return Promise.resolve(connection.prepare(sql).get(...values));
+}
+
+function all(sql, values = [], connection = database) {
+  if (postgresUrl) return connection.query(toPostgresSql(sql), values).then(({ rows }) => rows);
+  return Promise.resolve(connection.prepare(sql).all(...values));
+}
+
+function run(sql, values = [], connection = database) {
+  if (postgresUrl) return connection.query(toPostgresSql(sql), values);
+  return Promise.resolve(connection.prepare(sql).run(...values));
+}
+
+async function withTransaction(callback) {
+  if (postgresUrl) {
+    const connection = await database.connect();
+    try {
+      await connection.query("BEGIN");
+      const result = await callback(connection);
+      await connection.query("COMMIT");
+      return result;
+    } catch (error) {
+      await connection.query("ROLLBACK");
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const result = await callback(database);
+    database.exec("COMMIT");
+    return result;
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
   }
 }
 
-database.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_access_key_hash ON users(access_key_hash) WHERE access_key_hash IS NOT NULL");
+async function initializeDatabase() {
+  if (process.env.NODE_ENV === "production" && !postgresUrl) {
+    throw new Error("Configura DATABASE_URL con una base PostgreSQL persistente antes de iniciar en producción.");
+  }
+  if (postgresUrl) {
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        password_salt TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        first_name TEXT NOT NULL DEFAULT '',
+        last_name TEXT NOT NULL DEFAULT '',
+        store_name TEXT NOT NULL DEFAULT 'Mi negocio',
+        access_key_hash TEXT
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS sessions_expiration ON sessions(expires_at);
+      CREATE TABLE IF NOT EXISTS app_data (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        store_name TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (user_id, store_name, record_id)
+      );
+      CREATE TABLE IF NOT EXISTS workspace (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS users_access_key_hash
+        ON users(access_key_hash) WHERE access_key_hash IS NOT NULL;
+    `);
+  } else {
+    fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+    database.exec(`
+      PRAGMA foreign_keys = ON;
+      PRAGMA journal_mode = WAL;
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        password_salt TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS sessions_expiration ON sessions(expires_at);
+      CREATE TABLE IF NOT EXISTS app_data (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        store_name TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (user_id, store_name, record_id)
+      );
+      CREATE TABLE IF NOT EXISTS workspace (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
 
-const findWorkspaceId = database.prepare("SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1");
-if (!database.prepare("SELECT user_id FROM workspace WHERE singleton = 1").get()) {
-  const existingWorkspace = findWorkspaceId.get();
-  if (existingWorkspace) {
-    database.prepare("INSERT INTO workspace (singleton, user_id) VALUES (1, ?)").run(existingWorkspace.id);
+    const existingUserColumns = new Set(
+      database.prepare("PRAGMA table_info(users)").all().map((column) => column.name),
+    );
+    for (const [column, definition] of [
+      ["first_name", "TEXT NOT NULL DEFAULT ''"],
+      ["last_name", "TEXT NOT NULL DEFAULT ''"],
+      ["store_name", "TEXT NOT NULL DEFAULT 'Mi negocio'"],
+      ["access_key_hash", "TEXT"],
+    ]) {
+      if (!existingUserColumns.has(column)) {
+        database.exec(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+      }
+    }
+    database.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_access_key_hash ON users(access_key_hash) WHERE access_key_hash IS NOT NULL");
+  }
+
+  const workspace = await get("SELECT user_id FROM workspace WHERE singleton = 1");
+  if (!workspace) {
+    const user = await get("SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1");
+    if (user) await run("INSERT INTO workspace (singleton, user_id) VALUES (1, ?)", [user.id]);
   }
 }
 
-const findUserById = database.prepare(
-  "SELECT id, first_name, last_name, store_name FROM users WHERE id = ?",
-);
-const findUserByAccessKeyHash = database.prepare(
-  "SELECT id, first_name, last_name, store_name, password_salt, password_hash FROM users WHERE access_key_hash = ?",
-);
-const findLegacyUsers = database.prepare(
-  "SELECT id, first_name, last_name, store_name, password_salt, password_hash FROM users WHERE access_key_hash IS NULL",
-);
-const updateAccessKeyHash = database.prepare(
-  "UPDATE users SET access_key_hash = ? WHERE id = ? AND access_key_hash IS NULL",
-);
-const insertUser = database.prepare(
-  "INSERT INTO users (id, email, first_name, last_name, store_name, password_salt, password_hash, access_key_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-);
-const insertSession = database.prepare(
-  "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-);
-const findSession = database.prepare(
-  "SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
-);
-const deleteSession = database.prepare("DELETE FROM sessions WHERE token_hash = ?");
-const deleteExpiredSessions = database.prepare("DELETE FROM sessions WHERE expires_at <= ?");
-const getUserData = database.prepare(
-  "SELECT store_name, record_json FROM app_data WHERE user_id = ?",
-);
-const saveUserData = database.prepare(
-  `INSERT INTO app_data (user_id, store_name, record_id, record_json)
-   VALUES (?, ?, ?, ?)
-   ON CONFLICT (user_id, store_name, record_id)
-   DO UPDATE SET record_json = excluded.record_json`,
-);
 const rateLimits = new Map();
 
 function sendJson(response, status, body, headers = {}) {
@@ -196,24 +253,33 @@ async function enforceRateLimit(request, route) {
   if (previous.count > 10) throw new HttpError(429, "Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.");
 }
 
-function getAuthenticatedUser(request) {
+async function getAuthenticatedUser(request) {
   const token = requestCookies(request).mi_negocio_session;
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-  const session = findSession.get(hashToken(token), Date.now());
+  const session = await get(
+    "SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?",
+    [hashToken(token), Date.now()],
+  );
   if (!session) return null;
-  return findUserById.get(session.user_id) || null;
+  return (await get(
+    "SELECT id, first_name, last_name, store_name FROM users WHERE id = ?",
+    [session.user_id],
+  )) || null;
 }
 
-function requireAuthenticatedUser(request) {
-  const user = getAuthenticatedUser(request);
+async function requireAuthenticatedUser(request) {
+  const user = await getAuthenticatedUser(request);
   if (!user) throw new HttpError(401, "Inicia sesión para continuar.");
   return user;
 }
 
-function createSession(user, response) {
-  deleteExpiredSessions.run(Date.now());
+async function createSession(user, response) {
+  await run("DELETE FROM sessions WHERE expires_at <= ?", [Date.now()]);
   const token = crypto.randomBytes(32).toString("hex");
-  insertSession.run(hashToken(token), user.id, Date.now() + sessionDuration);
+  await run(
+    "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+    [hashToken(token), user.id, Date.now() + sessionDuration],
+  );
   response.setHeader("Set-Cookie", sessionCookie(token));
 }
 
@@ -254,15 +320,15 @@ function emptyData() {
   return Object.fromEntries(recordStores.map((store) => [store, []]));
 }
 
-function loadData(userId) {
+async function loadData(userId) {
   const result = emptyData();
-  for (const row of getUserData.all(userId)) {
+  for (const row of await all("SELECT store_name, record_json FROM app_data WHERE user_id = ?", [userId])) {
     result[row.store_name].push(JSON.parse(row.record_json));
   }
   return result;
 }
 
-function persistData(userId, data) {
+async function persistData(userId, data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new HttpError(400, "Los datos recibidos no tienen un formato válido.");
   }
@@ -285,26 +351,29 @@ function persistData(userId, data) {
       if (records.length > 10000) throw new HttpError(413, "Hay demasiados registros en una sola solicitud.");
     }
   }
-  database.exec("BEGIN IMMEDIATE");
-  try {
+  await withTransaction(async (connection) => {
     for (const [store, id, json] of records) {
-      saveUserData.run(userId, store, id, json);
+      await run(
+        `INSERT INTO app_data (user_id, store_name, record_id, record_json)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (user_id, store_name, record_id)
+         DO UPDATE SET record_json = excluded.record_json`,
+        [userId, store, id, json],
+        connection,
+      );
     }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
+  });
 }
 
 async function handleApi(request, response, pathname) {
   if (request.method === "GET" && pathname === "/api/session") {
-    const user = getAuthenticatedUser(request);
+    const user = await getAuthenticatedUser(request);
+    const workspace = await get("SELECT user_id FROM workspace WHERE singleton = 1");
     return sendJson(response, 200, { user: user ? {
       firstName: user.first_name,
       lastName: user.last_name,
       storeName: user.store_name,
-    } : null, storesConfigured: Boolean(findWorkspaceId.get()) });
+    } : null, storesConfigured: Boolean(workspace) });
   }
 
   if (request.method === "POST" && (pathname === "/api/register" || pathname === "/api/login")) {
@@ -316,10 +385,12 @@ async function handleApi(request, response, pathname) {
     if (pathname === "/api/register") {
       validateNewAccessKey(body.password);
       const accessKeyHash = await hashAccessKey(body.password);
-      if (findUserByAccessKeyHash.get(accessKeyHash)) {
+      if (await get("SELECT id FROM users WHERE access_key_hash = ?", [accessKeyHash])) {
         throw new HttpError(409, "Esa clave ya pertenece a otra tienda. Crea una clave diferente para esta tienda.");
       }
-      for (const legacyUser of findLegacyUsers.all()) {
+      for (const legacyUser of await all(
+        "SELECT id, first_name, last_name, store_name, password_salt, password_hash FROM users WHERE access_key_hash IS NULL",
+      )) {
         if (await matchesAccessKey(body.password, legacyUser)) {
           throw new HttpError(409, "Esa clave ya pertenece a otra tienda. Crea una clave diferente para esta tienda.");
         }
@@ -336,37 +407,37 @@ async function handleApi(request, response, pathname) {
       });
       const id = crypto.randomUUID();
       const user = { id, firstName, lastName, storeName };
-      let transactionStarted = false;
       try {
-        database.exec("BEGIN IMMEDIATE");
-        transactionStarted = true;
-        if (findUserByAccessKeyHash.get(accessKeyHash)) {
-          database.exec("ROLLBACK");
-          transactionStarted = false;
-          throw new HttpError(409, "Esa clave ya pertenece a otra tienda. Crea una clave diferente para esta tienda.");
-        }
-        insertUser.run(
-          user.id,
-          `workspace-${user.id}@mi-negocio.local`,
-          user.firstName,
-          user.lastName,
-          user.storeName,
-          salt.toString("hex"),
-          passwordHash.toString("hex"),
-          accessKeyHash,
-          Date.now(),
-        );
-        database.exec("COMMIT");
-        transactionStarted = false;
+        await withTransaction(async (connection) => {
+          if (await get("SELECT id FROM users WHERE access_key_hash = ?", [accessKeyHash], connection)) {
+            throw new HttpError(409, "Esa clave ya pertenece a otra tienda. Crea una clave diferente para esta tienda.");
+          }
+          await run(
+            `INSERT INTO users
+             (id, email, first_name, last_name, store_name, password_salt, password_hash, access_key_hash, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              user.id,
+              `workspace-${user.id}@mi-negocio.local`,
+              user.firstName,
+              user.lastName,
+              user.storeName,
+              salt.toString("hex"),
+              passwordHash.toString("hex"),
+              accessKeyHash,
+              Date.now(),
+            ],
+            connection,
+          );
+        });
       } catch (error) {
-        if (transactionStarted) database.exec("ROLLBACK");
         if (error instanceof HttpError) throw error;
-        if (error.errcode === 2067 || error.code === "ERR_SQLITE_CONSTRAINT_UNIQUE") {
+        if (error.errcode === 2067 || error.code === "ERR_SQLITE_CONSTRAINT_UNIQUE" || error.code === "23505") {
           throw new HttpError(409, "Esa clave ya pertenece a otra tienda. Crea una clave diferente para esta tienda.");
         }
         throw error;
       }
-      createSession(user, response);
+      await createSession(user, response);
       return sendJson(response, 201, { user: {
         firstName,
         lastName,
@@ -375,10 +446,15 @@ async function handleApi(request, response, pathname) {
     }
 
     const accessKeyHash = await hashAccessKey(body.password);
-    let user = findUserByAccessKeyHash.get(accessKeyHash);
+    let user = await get(
+      "SELECT id, first_name, last_name, store_name, password_salt, password_hash, access_key_hash FROM users WHERE access_key_hash = ?",
+      [accessKeyHash],
+    );
     let authenticated = false;
     if (!user) {
-      for (const legacyUser of findLegacyUsers.all()) {
+      for (const legacyUser of await all(
+        "SELECT id, first_name, last_name, store_name, password_salt, password_hash, access_key_hash FROM users WHERE access_key_hash IS NULL",
+      )) {
         if (await matchesAccessKey(body.password, legacyUser)) {
           user = legacyUser;
           authenticated = true;
@@ -393,15 +469,18 @@ async function handleApi(request, response, pathname) {
     }
     if (!user.access_key_hash) {
       try {
-        updateAccessKeyHash.run(accessKeyHash, user.id);
+        await run(
+          "UPDATE users SET access_key_hash = ? WHERE id = ? AND access_key_hash IS NULL",
+          [accessKeyHash, user.id],
+        );
       } catch (error) {
-        if (error.errcode === 2067 || error.code === "ERR_SQLITE_CONSTRAINT_UNIQUE") {
+        if (error.errcode === 2067 || error.code === "ERR_SQLITE_CONSTRAINT_UNIQUE" || error.code === "23505") {
           throw new HttpError(401, "La clave especial no es correcta.");
         }
         throw error;
       }
     }
-    createSession(user, response);
+    await createSession(user, response);
     return sendJson(response, 200, { user: {
       firstName: user.first_name,
       lastName: user.last_name,
@@ -412,20 +491,22 @@ async function handleApi(request, response, pathname) {
   if (request.method === "POST" && pathname === "/api/logout") {
     requireSameOrigin(request);
     const token = requestCookies(request).mi_negocio_session;
-    if (token && /^[a-f0-9]{64}$/.test(token)) deleteSession.run(hashToken(token));
+    if (token && /^[a-f0-9]{64}$/.test(token)) {
+      await run("DELETE FROM sessions WHERE token_hash = ?", [hashToken(token)]);
+    }
     return sendJson(response, 200, { ok: true }, { "Set-Cookie": clearedSessionCookie() });
   }
 
   if (request.method === "GET" && pathname === "/api/data") {
-    const user = requireAuthenticatedUser(request);
-    return sendJson(response, 200, { data: loadData(user.id) });
+    const user = await requireAuthenticatedUser(request);
+    return sendJson(response, 200, { data: await loadData(user.id) });
   }
 
   if (request.method === "PUT" && pathname === "/api/data") {
     requireSameOrigin(request);
-    const user = requireAuthenticatedUser(request);
+    const user = await requireAuthenticatedUser(request);
     const body = await readJson(request);
-    persistData(user.id, body.data);
+    await persistData(user.id, body.data);
     return sendJson(response, 200, { ok: true });
   }
 
@@ -483,7 +564,7 @@ app.use((error, request, response, next) => {
   return sendJson(response, 500, { error: "Ocurrió un error interno. Inténtalo de nuevo." });
 });
 
-function startServer() {
+function listenServer() {
   const server = app.listen(port, "0.0.0.0", () => {
     console.log(`Mi negocio disponible en http://localhost:${port}`);
   });
@@ -492,13 +573,24 @@ function startServer() {
       const occupiedPort = port;
       port += 1;
       console.warn(`El puerto ${occupiedPort} ya está en uso. Probando el puerto ${port}...`);
-      startServer();
+      listenServer();
       return;
     }
 
     console.error("No se pudo iniciar el servidor:", error);
     process.exitCode = 1;
   });
+}
+
+async function startServer() {
+  try {
+    await initializeDatabase();
+    listenServer();
+  } catch (error) {
+    console.error("No se pudo preparar la base de datos:", error);
+    process.exitCode = 1;
+    if (postgresUrl) await database.end();
+  }
 }
 
 startServer();

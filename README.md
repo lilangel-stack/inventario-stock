@@ -28,18 +28,28 @@ Cada clave da acceso únicamente a los datos de su tienda. Compártela solo con 
 
 ## Publicar en Internet
 
-Netlify puede publicar los archivos estáticos, pero no mantener este servidor Express encendido ni guardar de forma persistente el archivo SQLite. Por eso, subir solo el sitio a Netlify no activa el registro, el inicio de sesión ni la API.
+Netlify puede publicar los archivos estáticos, pero no mantener este servidor Express encendido ni guardar una base SQLite persistente. Por eso, el despliegue de la aplicación completa usa Render para Express y PostgreSQL administrado para los datos.
 
-Para publicar la aplicación completa, conecta este repositorio a Render y crea el servicio usando el archivo `render.yaml` incluido. Render iniciará Express y servirá tanto la interfaz como la API desde el mismo dominio, con SQLite en un disco persistente. Después de desplegar, abre la URL del servicio de Render, no la URL estática de Netlify. El disco persistente requiere un plan que lo admita.
+1. Crea una base de datos PostgreSQL en un proveedor que ofrezca un plan gratuito y copia su URL de conexión (`DATABASE_URL`).
+2. Antes de desplegar la app, copia los datos locales a PostgreSQL desde la carpeta del proyecto. En PowerShell, ejecuta:
 
-El primer despliegue crea una base SQLite nueva en el disco del servicio. La base de datos que ya está en `data/mi-negocio.sqlite` en tu computador no se copia automáticamente a la nube; respáldala y transfiérela al disco persistente antes de usar el servicio si necesitas conservar esos datos.
+   ```powershell
+   $env:DATABASE_URL = "pega-aqui-la-URL-de-conexion"
+   npm run migrate:sqlite
+   ```
+
+   La migración se cancela si la base remota ya tiene datos, para evitar sobrescribirlos. No compartas ni publiques la URL: contiene la contraseña de la base.
+3. Sube los cambios de este proyecto a GitHub. En Render, conecta el repositorio como Blueprint. El archivo `render.yaml` configura el servidor web en el plan gratuito y solicita `DATABASE_URL`; no necesita un disco persistente. Pega la misma URL de conexión y conserva `NODE_ENV=production`.
+4. Después de desplegar, abre la URL del servicio de Render; no la URL estática de Netlify.
+
+La app sigue usando SQLite localmente si no se define `DATABASE_URL`. La migración copia tiendas y registros, pero no sesiones activas; inicia sesión de nuevo después del despliegue.
 
 ## Acceder desde otros dispositivos
 
 - **En la misma red local:** inicia el servidor en el equipo donde quieras guardar la base de datos y abre desde el otro dispositivo `http://<IP-local-del-equipo>:<puerto-mostrado-en-la-terminal>`. El equipo debe permanecer encendido y su firewall debe permitir conexiones al puerto.
-- **Desde fuera de la red:** despliega esta aplicación en un servidor accesible por Internet con HTTPS y almacenamiento persistente. El archivo `render.yaml` configura un disco en `/var/data`. No publiques la aplicación en Internet sin HTTPS.
-- **Base de datos:** se crea en `data/mi-negocio.sqlite`. Puedes cambiar su ubicación con la variable de entorno `DATABASE_PATH` y el puerto con `PORT`.
-- **Almacenamiento:** el tema claro/oscuro se guarda en el navegador. Los productos, compras, ventas y gastos se guardan en SQLite y se comparten con todas las personas que accedan mediante la clave de la tienda.
+- **Desde fuera de la red:** despliega esta aplicación en un servidor accesible por Internet con HTTPS y configura `DATABASE_URL` con una base PostgreSQL persistente.
+- **Base de datos local:** se crea en `data/mi-negocio.sqlite`. Puedes cambiar su ubicación con `DATABASE_PATH`; para producción, usa `DATABASE_URL`. Render define `PORT` automáticamente.
+- **Almacenamiento:** el tema claro/oscuro se guarda en el navegador. Los productos, compras, ventas y gastos se guardan en SQLite localmente o en PostgreSQL cuando está configurado `DATABASE_URL`, y se comparten con todas las personas que accedan mediante la clave de la tienda.
 - **Migración:** los registros antiguos de IndexedDB en este navegador se migran a la tienda cuando se crea por primera vez o cuando una tienda existente sin registros se abre desde este navegador.
 
 ## Cálculos
@@ -53,4 +63,4 @@ El primer despliegue crea una base SQLite nueva en el disco del servicio. La bas
 
 La clave se almacena como hash scrypt y la sesión se identifica mediante una cookie `HttpOnly`.
 
-En despliegues públicos, configura HTTPS y conserva el archivo SQLite en un disco persistente con copias de seguridad.
+En despliegues públicos, configura HTTPS, guarda `DATABASE_URL` como secreto y configura copias de seguridad en el proveedor de PostgreSQL.
